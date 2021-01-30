@@ -41,7 +41,7 @@ function task(server: udp.Socket, config: ServerConfig) {
             tcp.write(tcpQuery);
             tcp.once('data', (resp) => {
                 // delete length
-                var tcpResp = Buffer.alloc(msg.length);
+                var tcpResp = Buffer.alloc(resp.length - 2);
                 for (var i = 0; i < tcpResp.length; i++) {
                     tcpResp[i] = resp[i + 2];
                 }
