@@ -6,7 +6,7 @@ import tcpServer from './tcpServer';
 const config: ServerConfig = {
     host: 'localhost',
     port: 53,
-    server: '8.8.8.8',
+    server: '1.1.1.1',
 };
 
 function udpServer(config: ServerConfig) {
@@ -29,10 +29,10 @@ function task(server: udp.Socket, config: ServerConfig) {
         var tcp = net.createConnection({ host: dnsServer, port: 53 }, () => {
             console.log('server connected...');
 
-            // add "0x00 0x33"
+            // add length
             var tcpQuery = Buffer.alloc(2 + msg.length);
-            tcpQuery[0] = 0x00;
-            tcpQuery[1] = 0x33;
+            tcpQuery[0] = msg.length / 256;
+            tcpQuery[1] = msg.length % 256;
             for (var i = 2; i < tcpQuery.length; i++) {
                 tcpQuery[i] = msg[i - 2];
             }
@@ -40,14 +40,19 @@ function task(server: udp.Socket, config: ServerConfig) {
 
             tcp.write(tcpQuery);
             tcp.once('data', (resp) => {
-                // delete "0x00 0x33"
+                // delete length
                 var tcpResp = Buffer.alloc(msg.length);
                 for (var i = 0; i < tcpResp.length; i++) {
                     tcpResp[i] = resp[i + 2];
                 }
                 printMsg(tcpResp, 'resp');
                 server.send(tcpResp, rinfo.port, rinfo.address);
+                tcp.destroy();
             });
+        });
+
+        tcp.on('error', (err) => {
+            console.error(err);
         });
     });
 }
@@ -55,4 +60,8 @@ function task(server: udp.Socket, config: ServerConfig) {
 (() => {
     tcpServer(config);
     udpServer(config);
+
+    process.on('uncaughtException', () => {
+        console.log('ERROR !!!!!!!!');
+    });
 })();

@@ -17,7 +17,15 @@ export default function tcpServer(config: ServerConfig) {
                         conn.write(resp);
                     });
                 });
+
+                forward.on('error', (err) => {
+                    console.error(err);
+                });
             });
-        })
+        });
+    });
+
+    tcp.on('error', (err) => {
+        console.error('err');
     });
 }
