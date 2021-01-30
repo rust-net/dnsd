@@ -1,0 +1,15 @@
+{
+    "name": "app",
+    "version": "1.0.0",
+    "main": "dist/main.js",
+    "scripts": {
+        "setup": "nds --eject && yarn add -D @types/node",
+        "start:dev": "nds",
+        "build": "wbepack --env production",
+        "rebuild": "wbepack --env rebuild"
+    },
+    "license": "MIT",
+    "devDependencies": {
+        "@types/node": "^14.14.22"
+    }
+}
