@@ -1,0 +1,10 @@
+[package]
+name = "dnsd"
+version = "0.1.0"
+authors = ["develon <develon@qq.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1.5.0", features = ["full"] }    # An event-driven, non-blocking I/O platform for writing asynchronous I/O backed applications. 
