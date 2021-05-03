@@ -49,9 +49,9 @@ async fn udp_serv() -> std::io::Result<()> {
             } else {
                 SERVER.to_string()
             };
-            let tcp = tokio::net::TcpStream::connect(server).await;
+            let tcp = tokio::net::TcpStream::connect(&server).await;
             if let Err(e) = tcp {
-                println!("无法连接服务器{}：{}", SERVER, e);
+                println!("无法连接服务器{}：{}", &server, e);
                 return;
             }
             let mut tcp = tcp.ok().unwrap();
