@@ -47,7 +47,7 @@ async fn udp_serv() -> std::io::Result<()> {
         let map1= map.clone();
         let map2= map.clone();
         // Find cache
-        let cache = map1.try_lock().unwrap();
+        let cache = map1.lock().await;
         let cache = cache.get(&query[4..received + 2]);
         if let Some(cache) = cache {
             if log {
