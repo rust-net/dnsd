@@ -6,6 +6,7 @@ use tokio::net::UdpSocket;
 
 const LISTEN: &str = "127.0.0.1:53";
 const SERVER: &str = "1.1.1.1:53";
+// const SERVER: &str = "114.114.114.114:53";
 
 struct DNS<'a> {
     value: &'a [u8],
@@ -69,21 +70,21 @@ impl<'a> DNS<'a> {
             self.value[self.offset + 6] as u16 * 256 + self.value[self.offset + 7] as u16;
         count
     }
-    pub fn nscount(&self) -> u16 {
-        let count: u16 =
-            self.value[self.offset + 8] as u16 * 256 + self.value[self.offset + 9] as u16;
-        count
-    }
-    pub fn arcount(&self) -> u16 {
-        let count: u16 =
-            self.value[self.offset + 10] as u16 * 256 + self.value[self.offset + 11] as u16;
-        count
-    }
-    pub fn question_list(&self) -> Vec<String> {
+    // pub fn nscount(&self) -> u16 {
+    //     let count: u16 =
+    //         self.value[self.offset + 8] as u16 * 256 + self.value[self.offset + 9] as u16;
+    //     count
+    // }
+    // pub fn arcount(&self) -> u16 {
+    //     let count: u16 =
+    //         self.value[self.offset + 10] as u16 * 256 + self.value[self.offset + 11] as u16;
+    //     count
+    // }
+    pub fn question_list(&self) -> Vec<(String, &'static str)> {
         let mut vec = Vec::with_capacity(1);
-        for i in 0..self.qdcount() {
+        let mut j = 12;
+        for _ in 0..self.qdcount() {
             let mut str = String::with_capacity(1024);
-            let mut j = 12;
             loop {
                 let ch = self.value[self.offset + j];
                 j += 1;
@@ -97,20 +98,80 @@ impl<'a> DNS<'a> {
                 }
                 str.push('.');
             }
-            vec.push(str);
+            let qtype: u16 = self.value[self.offset + j + 1] as u16 * 256 + self.value[self.offset + j + 2] as u16;
+            vec.push((str, match qtype {
+                1 => "A",
+                0x1c => "AAAA",
+                2 => "NS",
+                3 => "MD",
+                4 => "MF",
+                5 => "CNAME",
+                15 => "MX",
+                16 => "TXT",
+                _ => "_",
+            }));
+            j += 4; // QTYPE 2 bytes and QCLASS 2 bytes
         }
         vec
     }
     pub fn question(&self) -> String {
         let mut str = String::with_capacity(1024);
         str.push_str("{ ");
-        for name in self.question_list() {
-            str.push_str(&format!("{} ", name));
+        for question in self.question_list() {
+            str.push_str(&format!("{name} ({type}) ", name = question.0, type = question.1));
         }
         str.push_str("}");
         str
     }
+    pub fn answer_list(&self) -> Vec<(String, &'static str)> {
+        let mut vec = Vec::with_capacity(1);
+        let mut j = 8; // PIN
+        for _ in 0..self.ancount() {
+            let mut str = String::with_capacity(1024);
+            loop {
+                let ch = self.value[self.offset + j];
+                j += 1;
+                for k in 0..ch {
+                    let nch = self.value[self.offset + j + k as usize] as char;
+                    str.push(nch);
+                }
+                j += ch as usize;
+                if self.value[self.offset + j] == 0 {
+                    break;
+                }
+                str.push('.');
+            }
+            let qtype: u16 = self.value[self.offset + j + 1] as u16 * 256 + self.value[self.offset + j + 2] as u16;
+            vec.push((str, match qtype {
+                1 => "A",
+                0x1c => "AAAA",
+                2 => "NS",
+                3 => "MD",
+                4 => "MF",
+                5 => "CNAME",
+                15 => "MX",
+                16 => "TXT",
+                _ => "_",
+            }));
+            j += 4; // QTYPE 2 bytes and QCLASS 2 bytes
+        }
+        vec
+    }
+    pub fn answer(&self) -> String {
+        let mut str = String::with_capacity(1024);
+        str.push_str("| ");
+        for question in self.answer_list() {
+            str.push_str(&format!("{name} ({type}) ", name = question.0, type = question.1));
+        }
+        str.push_str("|");
+        str
+    }
     pub fn info(&self) {
+        let target = self.question_list();
+        let target = target.get(0).unwrap();
+        if target.0 != "y2b.123345.xyz" {
+            return;
+        }
         if self.qr() == "request" {
             println!(
                 "{id} {opcode} {question}",
@@ -125,6 +186,11 @@ impl<'a> DNS<'a> {
                 opcode = self.opcode(),
                 id = self.id(),
                 question = self.question(),
+            );
+            println!(
+                "                                      {answer}",
+                // answer = self.answer(),
+                answer = "??",
             );
         }
         // println!("{:02x?}", self.value); // 以十六进制而非十进制打印数组
@@ -189,7 +255,7 @@ async fn udp_serv() -> std::io::Result<()> {
         }
         let (received, client) = recv_result.ok().unwrap();
         if log {
-            println!("==>>  DNS查询  ==>>");
+            // println!("==>>  DNS查询  ==>>");
             DNS::with(&query[..received + 2], 2).info();
         }
 
@@ -204,8 +270,8 @@ async fn udp_serv() -> std::io::Result<()> {
             buf[1] = query[3];
             &buf[2..2 + cache.len()].copy_from_slice(&cache[..]);
             if log {
-                println!("                                      <<==  已缓存  <<==");
-                print!("                                      ");
+                // println!("                                      <<==  已缓存  <<==");
+                // print!("                                      ");
                 DNS::with(&buf[..cache.len()], 0).info();
             }
             if let Err(e) = listener.send_to(&buf, client).await {
@@ -239,14 +305,14 @@ async fn udp_serv() -> std::io::Result<()> {
                 return;
             }
 
-            let mut resp = [0u8; 1024];
+            let mut resp = [0u8; 2048];
             if let Ok(le) = tcp.read(&mut resp).await {
-                let mut map = map2.try_lock().unwrap();
+                let mut map = map2.lock().await;
                 map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
                 listener.send_to(&resp[2..le], client).await.unwrap();
                 if log {
-                    println!("                                      <<==  DNS响应  <<==");
-                    print!("                                      ");
+                    // println!("                                      <<==  DNS响应  <<==");
+                    // print!("                                      ");
                     DNS::with(&resp[..le], 2).info();
                 }
             }
