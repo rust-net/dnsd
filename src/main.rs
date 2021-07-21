@@ -25,7 +25,7 @@ impl<'a> DNS<'a> {
     }
     pub fn to_string(&self) -> String {
         let mut str = String::with_capacity(1024);
-        for a in &self.value[2..] {
+        for a in &self.value[self.offset..] {
             // str.push_str(format!("{:08b} ", a).as_str());
             str.push_str(format!("{:02x} ", a).as_str());
         }
