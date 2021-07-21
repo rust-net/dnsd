@@ -215,7 +215,7 @@ impl<'a> DNS<'a> {
             );
         }
         // println!("{:02x?}", self.value); // 以十六进制而非十进制打印数组
-        println!("{}\n", self.to_string().white().reversed());
+        println!("{}", self.to_string().white().reversed());
         println!(
             "-----------------------------------------------------------------------------------"
         );
