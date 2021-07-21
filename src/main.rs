@@ -183,7 +183,10 @@ impl<'a> DNS<'a> {
                         vec.push("CNAME".to_string());
                         break;
                     },
-                    _ => vec.push("Unknown QTYPE".to_string()),
+                    _ => {
+                        vec.push("Unknown QTYPE".to_string());
+                        break;
+                    },
                 }
             } else { // not pointer
                 vec.push("Not Pointer".to_string());
