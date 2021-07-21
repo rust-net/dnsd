@@ -4,6 +4,10 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
 
+use colored::*;
+
+const DEBUG: bool = true;
+
 const LISTEN: &str = "127.0.0.1:53";
 const SERVER: &str = "1.1.1.1:53";
 // const SERVER: &str = "114.114.114.114:53";
@@ -98,18 +102,22 @@ impl<'a> DNS<'a> {
                 }
                 str.push('.');
             }
-            let qtype: u16 = self.value[self.offset + j + 1] as u16 * 256 + self.value[self.offset + j + 2] as u16;
-            vec.push((str, match qtype {
-                1 => "A",
-                0x1c => "AAAA",
-                2 => "NS",
-                3 => "MD",
-                4 => "MF",
-                5 => "CNAME",
-                15 => "MX",
-                16 => "TXT",
-                _ => "_",
-            }));
+            let qtype: u16 = self.value[self.offset + j + 1] as u16 * 256
+                + self.value[self.offset + j + 2] as u16;
+            vec.push((
+                str,
+                match qtype {
+                    1 => "A",
+                    0x1c => "AAAA",
+                    2 => "NS",
+                    3 => "MD",
+                    4 => "MF",
+                    5 => "CNAME",
+                    15 => "MX",
+                    16 => "TXT",
+                    _ => "_",
+                },
+            ));
             j += 4; // QTYPE 2 bytes and QCLASS 2 bytes
         }
         vec
@@ -123,78 +131,91 @@ impl<'a> DNS<'a> {
         str.push_str("}");
         str
     }
-    pub fn answer_list(&self) -> Vec<(String, &'static str)> {
+    pub fn answer_list(&self) -> Vec<String> {
         let mut vec = Vec::with_capacity(1);
-        let mut j = 8; // PIN
-        for _ in 0..self.ancount() {
-            let mut str = String::with_capacity(1024);
+        // 从何处寻找answer
+        let mut n = self.offset + 12; // offset + Header
+        for _ in 0..self.qdcount() {
             loop {
-                let ch = self.value[self.offset + j];
-                j += 1;
-                for k in 0..ch {
-                    let nch = self.value[self.offset + j + k as usize] as char;
-                    str.push(nch);
-                }
-                j += ch as usize;
-                if self.value[self.offset + j] == 0 {
+                if self.value[n] == 0 {
+                    n += 1 + 4; // 4 is QTYPE and QCLASS
                     break;
                 }
-                str.push('.');
+                n += 1;
             }
-            let qtype: u16 = self.value[self.offset + j + 1] as u16 * 256 + self.value[self.offset + j + 2] as u16;
-            vec.push((str, match qtype {
-                1 => "A",
-                0x1c => "AAAA",
-                2 => "NS",
-                3 => "MD",
-                4 => "MF",
-                5 => "CNAME",
-                15 => "MX",
-                16 => "TXT",
-                _ => "_",
-            }));
-            j += 4; // QTYPE 2 bytes and QCLASS 2 bytes
+        }
+
+        fn b2a(b: &[u8]) -> String {
+            match b.len() {
+                4 => format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]),
+                16 => {
+                    let mut str = String::with_capacity(40);
+                    for i in 0..b.len() {
+                        str.push_str(&format!("{:02x}", b[i]));
+                        if i % 2 == 1 {
+                            str.push(':');
+                        }
+                    }
+                    str.pop();
+                    str.replace("0000", "").replace("::", ":")
+                },
+                _ => format!("{:02x?}", b),
+            }
+        }
+
+        // 长度不定，可能是真正的数据，也有可能是指针（其值表示的是真正的数据在整个数据中的字节索引数），还有可能是二者的混合（以指针结尾）。
+        // 若是真正的数据，会以0x00结尾；若是指针，指针占2个字节，第一个字节的高2位为11。
+        for _ in 0..self.ancount() {
+            if self.value[n] & 0b_1100_0000 == 0b_1100_0000 {
+                let pointer =
+                    (self.value[n] & 0b_0011_1111) as u16 * 256 + self.value[n + 1] as u16;
+                let rdlength = self.value[n + pointer as usize - 2] as u16 * 256
+                    + self.value[n + pointer as usize - 1] as u16; // RDLENGTH
+                vec.push(b2a(
+                    &self.value[n + pointer as usize..n + pointer as usize + rdlength as usize]
+                ));
+                n += (pointer + rdlength) as usize;
+            }
         }
         vec
     }
     pub fn answer(&self) -> String {
         let mut str = String::with_capacity(1024);
-        str.push_str("| ");
-        for question in self.answer_list() {
-            str.push_str(&format!("{name} ({type}) ", name = question.0, type = question.1));
+        for answer in self.answer_list() {
+            str.push_str(&format!("{}, ", answer));
         }
-        str.push_str("|");
+        str.pop();
+        str.pop();
         str
     }
     pub fn info(&self) {
-        let target = self.question_list();
-        let target = target.get(0).unwrap();
-        if target.0 != "y2b.123345.xyz" {
-            return;
-        }
+        // let target = self.question_list();
+        // let target = target.get(0).unwrap();
+        // if target.0 != "y2b.123345.xyz" { // test case
+            // return;
+        // }
         if self.qr() == "request" {
             println!(
                 "{id} {opcode} {question}",
                 opcode = self.opcode(),
                 id = self.id(),
-                question = self.question(),
+                question = self.question().yellow().bold(),
             );
         } else {
             println!(
                 "{id} {opcode} {question} ({rcode})",
-                rcode = self.rcode(),
+                rcode = self.rcode().green(),
                 opcode = self.opcode(),
                 id = self.id(),
-                question = self.question(),
+                question = self.question().yellow().bold(),
             );
             println!(
-                "                                      {answer}",
-                // answer = self.answer(),
-                answer = "??",
+                "                                      | {answer} |",
+                answer = self.answer().red().bold(),
             );
         }
         // println!("{:02x?}", self.value); // 以十六进制而非十进制打印数组
-        println!("[{}]", self.to_string());
+        println!("[{}]\n", self.to_string().reversed());
         println!(
             "-----------------------------------------------------------------------------------"
         );
@@ -230,9 +251,8 @@ async fn udp_serv() -> std::io::Result<()> {
     let log = if let Some(_) = std::env::args().nth(3) {
         true
     } else {
-        // false
-        true
-    };
+        false
+    } || DEBUG;
     let listener = tokio::net::UdpSocket::bind(listen).await;
     if let Err(e) = listener {
         println!("无法启用监听服务: {}", e);
@@ -240,7 +260,10 @@ async fn udp_serv() -> std::io::Result<()> {
     }
     let listener: UdpSocket = listener.ok().unwrap();
     let listener = std::sync::Arc::new(listener);
-    println!("DNS代理服务已启动");
+    println!("{}", "DNS代理服务已启动".red().bold());
+    println!(
+        "-----------------------------------------------------------------------------------"
+    );
 
     let map: HashMap<_, _> = HashMap::<Vec<u8>, Vec<u8>>::with_capacity(1024); // cache
     let map: tokio::sync::Mutex<_> = tokio::sync::Mutex::new(map); // Mutex<HashMap>
@@ -255,7 +278,7 @@ async fn udp_serv() -> std::io::Result<()> {
         }
         let (received, client) = recv_result.ok().unwrap();
         if log {
-            // println!("==>>  DNS查询  ==>>");
+            println!("{}", "==>>  DNS查询  ==>>".cyan().bold());
             DNS::with(&query[..received + 2], 2).info();
         }
 
@@ -266,13 +289,13 @@ async fn udp_serv() -> std::io::Result<()> {
         let cache = cache.get(&query[4..received + 2]);
         if let Some(cache) = cache {
             let mut buf = vec![0u8; 2 + cache.len()];
-            buf[0] = query[2];
+            buf[0] = query[2]; // ID
             buf[1] = query[3];
             &buf[2..2 + cache.len()].copy_from_slice(&cache[..]);
             if log {
-                // println!("                                      <<==  已缓存  <<==");
-                // print!("                                      ");
-                DNS::with(&buf[..cache.len()], 0).info();
+                println!("{}", "                                      <<==  已缓存  <<==".blue().bold());
+                print!("                                      ");
+                DNS::with(&buf[..cache.len() + 2], 0).info();
             }
             if let Err(e) = listener.send_to(&buf, client).await {
                 eprintln!("Error: {}", e);
@@ -293,7 +316,7 @@ async fn udp_serv() -> std::io::Result<()> {
             };
             let tcp = tokio::net::TcpStream::connect(&server).await;
             if let Err(e) = tcp {
-                println!("无法连接服务器{}：{}", &server, e);
+                println!("{}", format!("无法连接服务器{}：{}", &server, e).red());
                 return;
             }
             let mut tcp = tcp.ok().unwrap();
@@ -301,7 +324,7 @@ async fn udp_serv() -> std::io::Result<()> {
             // Faword query request
             let writed = tcp.write(&query[..received + 2]).await;
             if let Err(e) = writed {
-                println!("意外的错误：{}", e);
+                println!("{}", format!("意外的错误：{}", e).red());
                 return;
             }
 
@@ -311,8 +334,8 @@ async fn udp_serv() -> std::io::Result<()> {
                 map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
                 listener.send_to(&resp[2..le], client).await.unwrap();
                 if log {
-                    // println!("                                      <<==  DNS响应  <<==");
-                    // print!("                                      ");
+                    println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
+                    print!("                                      ");
                     DNS::with(&resp[..le], 2).info();
                 }
             }
