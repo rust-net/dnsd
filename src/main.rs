@@ -74,16 +74,16 @@ impl<'a> DNS<'a> {
             self.value[self.offset + 6] as u16 * 256 + self.value[self.offset + 7] as u16;
         count
     }
-    // pub fn nscount(&self) -> u16 {
-    //     let count: u16 =
-    //         self.value[self.offset + 8] as u16 * 256 + self.value[self.offset + 9] as u16;
-    //     count
-    // }
-    // pub fn arcount(&self) -> u16 {
-    //     let count: u16 =
-    //         self.value[self.offset + 10] as u16 * 256 + self.value[self.offset + 11] as u16;
-    //     count
-    // }
+    pub fn nscount(&self) -> u16 {
+        let count: u16 =
+            self.value[self.offset + 8] as u16 * 256 + self.value[self.offset + 9] as u16;
+        count
+    }
+    pub fn arcount(&self) -> u16 {
+        let count: u16 =
+            self.value[self.offset + 10] as u16 * 256 + self.value[self.offset + 11] as u16;
+        count
+    }
     pub fn question_list(&self) -> Vec<(String, &'static str)> {
         let mut vec = Vec::with_capacity(1);
         let mut j = 12;
@@ -167,19 +167,35 @@ impl<'a> DNS<'a> {
         // 若是真正的数据，会以0x00结尾；若是指针，指针占2个字节，第一个字节的高2位为11。
         for _ in 0..self.ancount() {
             if self.value[n] & 0b_1100_0000 == 0b_1100_0000 {
-                let pointer =
-                    (self.value[n] & 0b_0011_1111) as u16 * 256 + self.value[n + 1] as u16;
-                let rdlength = self.value[n + pointer as usize - 2] as u16 * 256
-                    + self.value[n + pointer as usize - 1] as u16; // RDLENGTH
-                vec.push(b2a(
-                    &self.value[n + pointer as usize..n + pointer as usize + rdlength as usize]
-                ));
-                n += (pointer + rdlength) as usize;
+                let qtype = self.value[n + 2] as u16 * 256 + self.value[n + 3] as u16;
+                match qtype {
+                    0x0001 | 0x001c => {
+                        let pointer =
+                            (self.value[n] & 0b_0011_1111) as u16 * 256 + self.value[n + 1] as u16;
+                        let rdlength = self.value[n + pointer as usize - 2] as u16 * 256
+                            + self.value[n + pointer as usize - 1] as u16; // RDLENGTH
+                        vec.push(b2a(
+                            &self.value[n + pointer as usize..n + pointer as usize + rdlength as usize]
+                        ));
+                        n += (pointer + rdlength) as usize;
+                    },
+                    0x0005 => {
+                        vec.push("CNAME".to_string());
+                        break;
+                    },
+                    _ => vec.push("Unknown QTYPE".to_string()),
+                }
+            } else { // not pointer
+                vec.push("Not Pointer".to_string());
+                break;
             }
         }
         vec
     }
     pub fn answer(&self) -> String {
+        if self.ancount() == 0 {
+            return format!("Authority: {}, Additional: {}", self.nscount(), self.arcount());
+        }
         let mut str = String::with_capacity(1024);
         for answer in self.answer_list() {
             str.push_str(&format!("{}, ", answer));
