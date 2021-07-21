@@ -199,7 +199,7 @@ impl<'a> DNS<'a> {
                 "{id} {opcode} {question}",
                 opcode = self.opcode(),
                 id = self.id(),
-                question = self.question().yellow().bold(),
+                question = self.question().magenta().bold(),
             );
         } else {
             println!(
@@ -207,7 +207,7 @@ impl<'a> DNS<'a> {
                 rcode = self.rcode().green(),
                 opcode = self.opcode(),
                 id = self.id(),
-                question = self.question().yellow().bold(),
+                question = self.question().magenta().bold(),
             );
             println!(
                 "                                      | {answer} |",
@@ -215,7 +215,7 @@ impl<'a> DNS<'a> {
             );
         }
         // println!("{:02x?}", self.value); // 以十六进制而非十进制打印数组
-        println!("[{}]\n", self.to_string().reversed());
+        println!("{}\n", self.to_string().white().reversed());
         println!(
             "-----------------------------------------------------------------------------------"
         );
