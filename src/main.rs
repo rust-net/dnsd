@@ -132,7 +132,7 @@ impl<'a> DNS<'a> {
         str
     }
     pub fn answer_list(&self) -> Vec<String> {
-        let mut vec = Vec::with_capacity(1);
+        let mut vec = Vec::with_capacity(2);
         // 从何处寻找answer
         let mut n = self.offset + 12; // offset + Header
         for _ in 0..self.qdcount() {
