@@ -243,6 +243,11 @@ fn test() {
 }
 
 async fn udp_serv() -> std::io::Result<()> {
+    let server = if let Some(server) = std::env::args().nth(2) {
+        server
+    } else {
+        SERVER.to_string()
+    };
     let listen = if let Some(listen) = std::env::args().nth(1) {
         listen
     } else {
@@ -253,14 +258,15 @@ async fn udp_serv() -> std::io::Result<()> {
     } else {
         false
     } || DEBUG;
-    let listener = tokio::net::UdpSocket::bind(listen).await;
+    let listener = tokio::net::UdpSocket::bind(&listen).await;
     if let Err(e) = listener {
         println!("无法启用监听服务: {}", e);
         return Err(e);
     }
     let listener: UdpSocket = listener.ok().unwrap();
     let listener = std::sync::Arc::new(listener);
-    println!("{}", "DNS代理服务已启动".red().bold());
+    println!("{}: {} -> {}", "DNS代理服务已启动".red().bold(), listen.cyan().bold(), server.green().bold());
+    println!("{}", if log { "日志已开启" } else { "日志已关闭" }.red());
     println!(
         "-----------------------------------------------------------------------------------"
     );
@@ -271,6 +277,7 @@ async fn udp_serv() -> std::io::Result<()> {
 
     let mut query = [0u8; 1024]; // DNS query request data
     loop {
+        let server = server.clone();
         let listener = listener.clone();
         let recv_result = listener.recv_from(&mut query[2..]).await;
         if let Err(_) = recv_result {
@@ -309,14 +316,9 @@ async fn udp_serv() -> std::io::Result<()> {
             query[1] = (received % 0xff) as u8;
 
             // Connect server
-            let server = if let Some(server) = std::env::args().nth(2) {
-                server
-            } else {
-                SERVER.to_string()
-            };
             let tcp = tokio::net::TcpStream::connect(&server).await;
             if let Err(e) = tcp {
-                println!("{}", format!("无法连接服务器{}：{}", &server, e).red());
+                println!("{}", format!("无法连接服务器{}：{}", server, e).red());
                 return;
             }
             let mut tcp = tcp.ok().unwrap();
