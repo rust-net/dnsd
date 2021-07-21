@@ -6,7 +6,7 @@ use tokio::net::UdpSocket;
 
 use colored::*;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 const LISTEN: &str = "127.0.0.1:53";
 const SERVER: &str = "1.1.1.1:53";
@@ -253,8 +253,8 @@ async fn udp_serv() -> std::io::Result<()> {
     } else {
         LISTEN.to_string()
     };
-    let log = if let Some(_) = std::env::args().nth(3) {
-        true
+    let log = if let Some(log) = std::env::args().nth(3) {
+        if let Ok(_) = ["log_off", "off", "close"].binary_search(&log.as_str()) { false } else { true }
     } else {
         false
     } || DEBUG;
