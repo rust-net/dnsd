@@ -262,21 +262,10 @@ fn test() {
 }
 
 async fn udp_serv() -> std::io::Result<()> {
-    let server = if let Some(server) = std::env::args().nth(2) {
-        server
-    } else {
-        SERVER.to_string()
-    };
-    let listen = if let Some(listen) = std::env::args().nth(1) {
-        listen
-    } else {
-        LISTEN.to_string()
-    };
-    let log = if let Some(log) = std::env::args().nth(3) {
-        if let Some(_) = ["log_off", "off", "close"].iter().find(|&&it| (it == log.as_str())) { false } else { true }
-    } else {
-        false
-    } || DEBUG;
+    let server = std::env::args().nth(2).unwrap_or(SERVER.to_string());
+    let listen= std::env::args().nth(1).unwrap_or(LISTEN.to_string());
+    let log = std::env::args().nth(3).unwrap_or("on".to_string());
+    let log = DEBUG || if let Some(_) = ["log_off", "off", "close"].iter().find(|&&it| (it == log.as_str())) { false } else { true };
     let listener = tokio::net::UdpSocket::bind(&listen).await;
     if let Err(e) = listener {
         println!("无法启用监听服务: {}", e);
