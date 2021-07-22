@@ -273,7 +273,7 @@ async fn udp_serv() -> std::io::Result<()> {
         LISTEN.to_string()
     };
     let log = if let Some(log) = std::env::args().nth(3) {
-        if let Ok(_) = ["log_off", "off", "close"].binary_search(&log.as_str()) { false } else { true }
+        if let Some(_) = ["log_off", "off", "close"].iter().find(|&&it| (it == log.as_str())) { false } else { true }
     } else {
         false
     } || DEBUG;
