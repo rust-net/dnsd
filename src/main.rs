@@ -4,7 +4,8 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
 
-use colored::*;
+mod color;
+use color::ColorTrait;
 
 const DEBUG: bool = false;
 
@@ -18,10 +19,7 @@ struct DNS<'a> {
 }
 impl<'a> DNS<'a> {
     pub fn with(value: &'a [u8], offset: usize) -> Self {
-        return Self {
-            value: value,
-            offset: offset,
-        };
+        return Self { value, offset };
     }
     pub fn to_string(&self) -> String {
         let mut str = String::with_capacity(1024);
@@ -234,7 +232,7 @@ impl<'a> DNS<'a> {
             );
         }
         // println!("{:02x?}", self.value); // 以十六进制而非十进制打印数组
-        println!("{}", self.to_string().white().reversed());
+        println!("{}", self.to_string().bg_white().black());
         println!(
             "-----------------------------------------------------------------------------------"
         );

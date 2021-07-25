@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 tokio = { version = "1.5.0", features = ["full"] }    # An event-driven, non-blocking I/O platform for writing asynchronous I/O backed applications. 
 colored = "2.0.0"              # The most simple way to add colors in your terminal
+termcolor = "1.1.2"                # A simple cross platform library for writing colored text to a terminal. 
