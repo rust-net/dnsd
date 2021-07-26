@@ -292,7 +292,7 @@ async fn client() -> std::io::Result<()> {
         let (received, client) = recv_result.ok().unwrap();
         if log {
             println!("{}", "==>>  DNS查询  ==>>".cyan().bold());
-            DNS::with(&query[2..received +2], 0).info();
+            DNS::with(&query[2..received + 2], 0).info();
         }
 
         let map1 = map.clone();
@@ -335,23 +335,23 @@ async fn client() -> std::io::Result<()> {
             udp.connect(server).await.unwrap_or_default();
 
             // Faword query request
-            let writed = udp.send(encrypt(&mut query[2..received + 2])).await; // 加密
+            let mut backup = Vec::from(&query[2..received + 2]);
+            let writed = udp.send(encrypt(&mut backup)).await; // 加密
             if let Err(e) = writed {
                 println!("{}", format!("意外的错误：{}", e).red());
                 return;
             }
 
             let mut resp = [0u8; 2048];
-            if let Ok(le) = udp.recv(&mut resp[2..]).await {
-                decrypt(&mut resp[2..le + 2]);
+            if let Ok(le) = udp.recv(&mut resp).await {
+                decrypt(&mut resp[..le]);
                 let mut map = map2.lock().await;
-                // map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
-                map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
-                listener.send_to(&resp[2..le], client).await.unwrap();
+                map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[2..le]));
+                listener.send_to(&resp[..le], client).await.unwrap();
                 if log {
                     println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
                     print!("                                      ");
-                    DNS::with(&resp[..le], 2).info();
+                    DNS::with(&resp[..le], 0).info();
                 }
             }
         });
@@ -414,7 +414,7 @@ async fn server() -> std::io::Result<()> {
         decrypt(&mut query[2..received + 2]); // 解密
         if log {
             println!("{}", "==>>  DNS查询  ==>>".cyan().bold());
-            DNS::with(&query[..received + 2], 2).info();
+            DNS::with(&query[2..received + 2], 0).info();
         }
 
         let map1 = map.clone();
@@ -467,7 +467,7 @@ async fn server() -> std::io::Result<()> {
                 if log {
                     println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
                     print!("                                      ");
-                    DNS::with(&resp[..le], 2).info();
+                    DNS::with(&resp[2..le], 0).info();
                 }
             }
         });
