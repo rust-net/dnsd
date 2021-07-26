@@ -4,8 +4,8 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
 
-mod color;
-use color::ColorTrait;
+extern crate ttycolor;
+use ttycolor::*;
 
 const DEBUG: bool = false;
 
