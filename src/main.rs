@@ -9,7 +9,7 @@ use ttycolor::*;
 
 const DEBUG: bool = false;
 
-const LISTEN: &str = "127.0.0.1:53";
+const LISTEN: &str = "0.0.0.0:53";
 const SERVER: &str = "1.1.1.1:53";
 // const SERVER: &str = "114.114.114.114:53";
 
@@ -25,7 +25,7 @@ impl<'a> DNS<'a> {
         let mut str = String::with_capacity(1024);
         for a in &self.value[self.offset..] {
             // str.push_str(format!("{:08b} ", a).as_str());
-            str.push_str(format!("{:02x} ", a).as_str());
+            str.push_str(format!("0x{:02x}, ", a).as_str());
         }
         str.pop();
         str
@@ -259,9 +259,9 @@ fn test() {
     .info();
 }
 
-async fn udp_serv() -> std::io::Result<()> {
-    let server = std::env::args().nth(2).unwrap_or(SERVER.to_string());
+async fn client() -> std::io::Result<()> {
     let listen= std::env::args().nth(1).unwrap_or(LISTEN.to_string());
+    let server = std::env::args().nth(2).unwrap_or(SERVER.to_string());
     let log = std::env::args().nth(3).unwrap_or("on".to_string());
     let log = DEBUG || if let Some(_) = ["log_off", "off", "close"].iter().find(|&&it| (it == log.as_str())) { false } else { true };
     let listener = tokio::net::UdpSocket::bind(&listen).await;
@@ -271,7 +271,7 @@ async fn udp_serv() -> std::io::Result<()> {
     }
     let listener: UdpSocket = listener.ok().unwrap();
     let listener = std::sync::Arc::new(listener);
-    println!("{}: {} -> {}", "DNS代理服务已启动".red().bold(), listen.cyan().bold(), server.green().bold());
+    println!("{}: {} -> {}", "DNS代理服务client已启动".red().bold(), listen.cyan().bold(), server.green().bold());
     println!("{}", if log { "日志已开启" } else { "日志已关闭" }.red());
     println!(
         "-----------------------------------------------------------------------------------"
@@ -318,6 +318,125 @@ async fn udp_serv() -> std::io::Result<()> {
 
         tokio::spawn(async move {
             // TCP data body length
+            // 弃用
+            query[0] = (received / 0xff) as u8;
+            query[1] = (received % 0xff) as u8;
+
+            // Connect server
+            // let tcp = tokio::net::TcpStream::connect(&server).await;
+            // let tcp = tokio::net::TcpStream::connect(&server).await;
+            let udp = tokio::net::UdpSocket::bind("0.0.0.0:0").await;
+            if let Err(e) = udp {
+                println!("{}", format!("无法创建UDP：{}", e).red());
+                return;
+            }
+            let mut udp = udp.ok().unwrap();
+            udp.connect(server);
+
+            // Faword query request
+            let writed = udp.send(encrypt(&mut query[2..received + 2])).await; // 加密
+            if let Err(e) = writed {
+                println!("{}", format!("意外的错误：{}", e).red());
+                return;
+            }
+
+            let mut resp = [0u8; 2048];
+            if let Ok(le) = tcp.read(&mut resp).await {
+                let mut map = map2.lock().await;
+                map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
+                listener.send_to(&resp[2..le], client).await.unwrap();
+                if log {
+                    println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
+                    print!("                                      ");
+                    DNS::with(&resp[..le], 2).info();
+                }
+            }
+        });
+    }
+}
+
+fn encrypt(data: &mut [u8]) -> &mut [u8] {
+    data.reverse();
+    for i in 0..data.len() {
+        let flag = data[i] & 0b_1100_0000;
+        data[i] <<= 2;
+        data[i] |= flag >> 6;
+        data[i] ^= 0b_1011_0111;
+    }
+    data
+}
+
+fn decrypt(data: &mut [u8]) -> &mut [u8] {
+    data.reverse();
+    for i in 0..data.len() {
+        data[i] ^= 0b_1011_0111;
+        let flag = data[i] & 0b_0000_0011;
+        data[i] >>= 2;
+        data[i] |= flag << 6;
+    }
+    data
+}
+
+async fn server() -> std::io::Result<()> {
+    let listen= std::env::args().nth(2).unwrap_or(LISTEN.to_string());
+    let server = std::env::args().nth(3).unwrap_or(SERVER.to_string());
+    let log = std::env::args().nth(4).unwrap_or("on".to_string());
+    let log = DEBUG || if let Some(_) = ["log_off", "off", "close"].iter().find(|&&it| (it == log.as_str())) { false } else { true };
+    let listener = tokio::net::UdpSocket::bind(&listen).await;
+    if let Err(e) = listener {
+        println!("无法启用监听服务: {}", e);
+        return Err(e);
+    }
+    let listener: UdpSocket = listener.ok().unwrap();
+    let listener = std::sync::Arc::new(listener);
+    println!("{}: {} -> {}", "DNS代理服务server已启动".red().bold(), listen.cyan().bold(), server.green().bold());
+    println!("{}", if log { "日志已开启" } else { "日志已关闭" }.red());
+    println!(
+        "-----------------------------------------------------------------------------------"
+    );
+
+    let map: HashMap<_, _> = HashMap::<Vec<u8>, Vec<u8>>::with_capacity(1024); // cache
+    let map: tokio::sync::Mutex<_> = tokio::sync::Mutex::new(map); // Mutex<HashMap>
+    let map: std::sync::Arc<_> = std::sync::Arc::new(map); // Arc<Mutex<HashMap>>
+
+    let mut query = [0u8; 2048]; // DNS query request data
+    loop {
+        let server = server.clone();
+        let listener = listener.clone();
+        let recv_result = listener.recv_from(&mut query[2..]).await;
+        if let Err(_) = recv_result {
+            continue;
+        }
+        let (received, client) = recv_result.ok().unwrap();
+        decrypt(&mut query[2..received + 2]); // 解密
+        if log {
+            println!("{}", "==>>  DNS查询  ==>>".cyan().bold());
+            DNS::with(&query[..received + 2], 2).info();
+        }
+
+        let map1 = map.clone();
+        let map2 = map.clone();
+        // Find cache
+        let cache = map1.lock().await;
+        let cache = cache.get(&query[4..received + 2]);
+        if let Some(cache) = cache {
+            let mut buf = vec![0u8; 2 + cache.len()];
+            buf[0] = query[2]; // ID
+            buf[1] = query[3];
+            &buf[2..2 + cache.len()].copy_from_slice(&cache[..]);
+            if log {
+                println!("{}", "                                      <<==  已缓存  <<==".blue().bold());
+                print!("                                      ");
+                DNS::with(&buf[..cache.len() + 2], 0).info();
+            }
+            if let Err(e) = listener.send_to(encrypt(Vec::from(&buf[..]).as_mut_slice()), client).await {  // 加密
+                eprintln!("Error: {}", e);
+            }
+            continue;
+        }
+
+        tokio::spawn(async move {
+            // TCP data body length
             query[0] = (received / 0xff) as u8;
             query[1] = (received % 0xff) as u8;
 
@@ -340,7 +459,8 @@ async fn udp_serv() -> std::io::Result<()> {
             if let Ok(le) = tcp.read(&mut resp).await {
                 let mut map = map2.lock().await;
                 map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
-                listener.send_to(&resp[2..le], client).await.unwrap();
+                // listener.send_to(&resp[2..le], client).await.unwrap();
+                listener.send_to(encrypt(Vec::from(&resp[2..le]).as_mut_slice()), client).await.unwrap(); // 加密
                 if log {
                     println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
                     print!("                                      ");
@@ -353,5 +473,10 @@ async fn udp_serv() -> std::io::Result<()> {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    udp_serv().await
+    match std::env::args().nth(1).unwrap_or_default().as_str() {
+        "server" => {
+            server().await
+        }
+        _ => client().await
+    }
 }
