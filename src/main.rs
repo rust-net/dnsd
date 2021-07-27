@@ -499,7 +499,7 @@ async fn server() -> std::io::Result<()> {
                     return;
                 }
                 let udp = udp.ok().unwrap();
-                udp.connect(server).await.unwrap();
+                udp.connect(&server).await.unwrap();
 
                 // Faword query request
                 let writed = udp.send(&query[2..received + 2]).await;
@@ -508,7 +508,7 @@ async fn server() -> std::io::Result<()> {
                     return;
                 }
 
-                udp.connect(client).await.unwrap();
+                udp.connect(&server).await.unwrap();
                 let mut resp = [0u8; 2048];
                 if let Ok(le) = udp.recv(&mut resp).await {
                     let mut map = map2.lock().await;
