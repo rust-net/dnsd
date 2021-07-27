@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
+#[cfg(tcp)]
 use tokio::io::AsyncReadExt;
+#[cfg(tcp)]
 use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
 
@@ -359,6 +361,10 @@ async fn client() -> std::io::Result<()> {
 }
 
 fn encrypt(data: &mut [u8]) -> &mut [u8] {
+    #[cfg(debug)] {
+        println!("加密前：");
+        println!("{}", DNS::with(data, 0).to_string().red().bold());
+    }
     data.reverse();
     for i in 0..data.len() {
         let flag = data[i] & 0b_1100_0000;
@@ -366,16 +372,28 @@ fn encrypt(data: &mut [u8]) -> &mut [u8] {
         data[i] |= flag >> 6;
         data[i] ^= 0b_1011_0111;
     }
+    #[cfg(debug)] {
+        println!("加密后：");
+        println!("{}", DNS::with(data, 0).to_string().red().bold());
+    }
     data
 }
 
 fn decrypt(data: &mut [u8]) -> &mut [u8] {
+    #[cfg(debug)] {
+        println!("解密前：");
+        println!("{}", DNS::with(data, 0).to_string().green().bold());
+    }
     data.reverse();
     for i in 0..data.len() {
         data[i] ^= 0b_1011_0111;
         let flag = data[i] & 0b_0000_0011;
         data[i] >>= 2;
         data[i] |= flag << 6;
+    }
+    #[cfg(debug)] {
+        println!("解密后：");
+        println!("{}", DNS::with(data, 0).to_string().green().bold());
     }
     data
 }
@@ -443,31 +461,65 @@ async fn server() -> std::io::Result<()> {
             query[0] = (received / 0xff) as u8;
             query[1] = (received % 0xff) as u8;
 
-            // Connect server
-            let tcp = tokio::net::TcpStream::connect(&server).await;
-            if let Err(e) = tcp {
-                println!("{}", format!("无法连接服务器{}：{}", server, e).red());
-                return;
-            }
-            let mut tcp = tcp.ok().unwrap();
+            #[cfg(tcp)] {
+                // Connect server
+                let tcp = tokio::net::TcpStream::connect(&server).await;
+                if let Err(e) = tcp {
+                    println!("{}", format!("无法连接服务器{}：{}", server, e).red());
+                    return;
+                }
+                let mut tcp = tcp.ok().unwrap();
 
-            // Faword query request
-            let writed = tcp.write(&query[..received + 2]).await;
-            if let Err(e) = writed {
-                println!("{}", format!("意外的错误：{}", e).red());
-                return;
-            }
+                // Faword query request
+                let writed = tcp.write(&query[..received + 2]).await;
+                if let Err(e) = writed {
+                    println!("{}", format!("意外的错误：{}", e).red());
+                    return;
+                }
 
-            let mut resp = [0u8; 2048];
-            if let Ok(le) = tcp.read(&mut resp).await {
-                let mut map = map2.lock().await;
-                map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
-                // listener.send_to(&resp[2..le], client).await.unwrap();
-                listener.send_to(encrypt(Vec::from(&resp[2..le]).as_mut_slice()), client).await.unwrap(); // 加密
-                if log {
-                    println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
-                    print!("                                      ");
-                    DNS::with(&resp[2..le], 0).info();
+                let mut resp = [0u8; 2048];
+                if let Ok(le) = tcp.read(&mut resp).await {
+                    let mut map = map2.lock().await;
+                    map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
+                    // listener.send_to(&resp[2..le], client).await.unwrap();
+                    listener.send_to(encrypt(Vec::from(&resp[2..le]).as_mut_slice()), client).await.unwrap(); // 加密
+                    if log {
+                        println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
+                        print!("                                      ");
+                        DNS::with(&resp[2..le], 0).info();
+                    }
+                }
+            }
+            
+            #[cfg(not(tcp))] {
+                // Connect server
+                let udp = tokio::net::UdpSocket::bind("0.0.0.0:0").await;
+                if let Err(e) = udp {
+                    println!("{}", format!("无法创建UDP：{}", e).red());
+                    return;
+                }
+                let udp = udp.ok().unwrap();
+                udp.connect(server).await.unwrap();
+
+                // Faword query request
+                let writed = udp.send(&query[2..received + 2]).await;
+                if let Err(e) = writed {
+                    println!("{}", format!("意外的错误：{}", e).red());
+                    return;
+                }
+
+                udp.connect(client).await.unwrap();
+                let mut resp = [0u8; 2048];
+                if let Ok(le) = udp.recv(&mut resp).await {
+                    let mut map = map2.lock().await;
+                    map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[2..le]));
+                    // listener.send_to(&resp[2..le], client).await.unwrap();
+                    listener.send_to(encrypt(Vec::from(&resp[..le]).as_mut_slice()), client).await.unwrap(); // 加密
+                    if log {
+                        println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
+                        print!("                                      ");
+                        DNS::with(&resp[..le], 0).info();
+                    }
                 }
             }
         });
