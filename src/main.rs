@@ -27,7 +27,7 @@ impl<'a> DNS<'a> {
         let mut str = String::with_capacity(1024);
         for a in &self.value[self.offset..] {
             // str.push_str(format!("{:08b} ", a).as_str());
-            str.push_str(format!("0x{:02x}, ", a).as_str());
+            str.push_str(format!("{:02x} ", a).as_str());
         }
         str.pop();
         str
