@@ -294,7 +294,9 @@ async fn client() -> std::io::Result<()> {
         let (received, client) = recv_result.ok().unwrap();
         if log {
             println!("{}", "==>>  DNS查询  ==>>".cyan().bold());
-            DNS::with(&query[2..received + 2], 0).info();
+            std::panic::catch_unwind(|| {
+                DNS::with(&query[2..received + 2], 0).info();
+            }).unwrap_or_default();
         }
 
         let map1 = map.clone();
@@ -310,8 +312,10 @@ async fn client() -> std::io::Result<()> {
             if log {
                 println!("{}", "                                      <<==  已缓存  <<==".blue().bold());
                 print!("                                      ");
-                // DNS::with(&buf[..cache.len() + 2], 0).info();
-                DNS::with(&buf, 0).info();
+                std::panic::catch_unwind(|| {
+                    // DNS::with(&buf[..cache.len() + 2], 0).info();
+                    DNS::with(&buf, 0).info();
+                }).unwrap_or_default();
             }
             if let Err(e) = listener.send_to(&buf, client).await {
                 eprintln!("Error: {}", e);
@@ -353,7 +357,9 @@ async fn client() -> std::io::Result<()> {
                 if log {
                     println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
                     print!("                                      ");
-                    DNS::with(&resp[..le], 0).info();
+                    std::panic::catch_unwind(|| {
+                        DNS::with(&resp[..le], 0).info();
+                    }).unwrap_or_default();
                 }
             }
         });
@@ -432,7 +438,9 @@ async fn server() -> std::io::Result<()> {
         decrypt(&mut query[2..received + 2]); // 解密
         if log {
             println!("{}", "==>>  DNS查询  ==>>".cyan().bold());
-            DNS::with(&query[2..received + 2], 0).info();
+            std::panic::catch_unwind(|| {
+                DNS::with(&query[2..received + 2], 0).info();
+            }).unwrap_or_default();
         }
 
         let map1 = map.clone();
@@ -448,7 +456,9 @@ async fn server() -> std::io::Result<()> {
             if log {
                 println!("{}", "                                      <<==  已缓存  <<==".blue().bold());
                 print!("                                      ");
-                DNS::with(&buf[..cache.len() + 2], 0).info();
+                std::panic::catch_unwind(|| {
+                    DNS::with(&buf[..cache.len() + 2], 0).info();
+                }).unwrap_or_default();
             }
             if let Err(e) = listener.send_to(encrypt(Vec::from(&buf[..]).as_mut_slice()), client).await {  // 加密
                 eprintln!("Error: {}", e);
@@ -486,7 +496,9 @@ async fn server() -> std::io::Result<()> {
                     if log {
                         println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
                         print!("                                      ");
-                        DNS::with(&resp[2..le], 0).info();
+                        std::panic::catch_unwind(|| {
+                            DNS::with(&resp[2..le], 0).info();
+                        }).unwrap_or_default();
                     }
                 }
             }
@@ -518,7 +530,9 @@ async fn server() -> std::io::Result<()> {
                     if log {
                         println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
                         print!("                                      ");
-                        DNS::with(&resp[..le], 0).info();
+                        std::panic::catch_unwind(|| {
+                            DNS::with(&resp[..le], 0).info();
+                        }).unwrap_or_default();
                     }
                 }
             }
