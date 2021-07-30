@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-#[cfg(tcp)]
 use tokio::io::AsyncReadExt;
-#[cfg(tcp)]
 use tokio::io::AsyncWriteExt;
 use tokio::net::UdpSocket;
 
@@ -540,11 +538,112 @@ async fn server() -> std::io::Result<()> {
     }
 }
 
+async fn client_tcp() -> std::io::Result<()> {
+    let listen= std::env::args().nth(2).unwrap_or(LISTEN.to_string());
+    let server = std::env::args().nth(3).unwrap_or(SERVER.to_string());
+    let log = std::env::args().nth(4).unwrap_or("on".to_string());
+    let log = DEBUG || if let Some(_) = ["log_off", "off", "close"].iter().find(|&&it| (it == log.as_str())) { false } else { true };
+    let listener = tokio::net::UdpSocket::bind(&listen).await;
+    if let Err(e) = listener {
+        println!("无法启用监听服务: {}", e);
+        return Err(e);
+    }
+    let listener: UdpSocket = listener.ok().unwrap();
+    let listener = std::sync::Arc::new(listener);
+    println!("{}: {} -> {}", "DNS代理服务 (TCP转发) 已启动".red().bold(), listen.cyan().bold(), server.green().bold());
+    println!("{}", if log { "日志已开启" } else { "日志已关闭" }.red());
+    println!(
+        "-----------------------------------------------------------------------------------"
+    );
+
+    let map: HashMap<_, _> = HashMap::<Vec<u8>, Vec<u8>>::with_capacity(1024); // cache
+    let map: tokio::sync::Mutex<_> = tokio::sync::Mutex::new(map); // Mutex<HashMap>
+    let map: std::sync::Arc<_> = std::sync::Arc::new(map); // Arc<Mutex<HashMap>>
+
+    let mut query = [0u8; 1024]; // DNS query request data
+    loop {
+        let server = server.clone();
+        let listener = listener.clone();
+        let recv_result = listener.recv_from(&mut query[2..]).await;
+        if let Err(_) = recv_result {
+            continue;
+        }
+        let (received, client) = recv_result.ok().unwrap();
+        if log {
+            println!("{}", "==>>  DNS查询  ==>>".cyan().bold());
+            std::panic::catch_unwind(|| {
+                DNS::with(&query[..received + 2], 2).info();
+            }).unwrap_or_default();
+        }
+
+        let map1 = map.clone();
+        let map2 = map.clone();
+        // Find cache
+        let cache = map1.lock().await;
+        let cache = cache.get(&query[4..received + 2]);
+        if let Some(cache) = cache {
+            let mut buf = vec![0u8; 2 + cache.len()];
+            buf[0] = query[2]; // ID
+            buf[1] = query[3];
+            &buf[2..2 + cache.len()].copy_from_slice(&cache[..]);
+            if log {
+                println!("{}", "                                      <<==  已缓存  <<==".blue().bold());
+                print!("                                      ");
+                std::panic::catch_unwind(|| {
+                    DNS::with(&buf[..cache.len() + 2], 0).info();
+                }).unwrap_or_default();
+            }
+            if let Err(e) = listener.send_to(&buf, client).await {
+                eprintln!("Error: {}", e);
+            }
+            continue;
+        }
+
+        tokio::spawn(async move {
+            // TCP data body length
+            query[0] = (received / 0xff) as u8;
+            query[1] = (received % 0xff) as u8;
+
+            // Connect server
+            let tcp = tokio::net::TcpStream::connect(&server).await;
+            if let Err(e) = tcp {
+                println!("{}", format!("无法连接服务器{}：{}", server, e).red());
+                return;
+            }
+            let mut tcp = tcp.ok().unwrap();
+
+            // Faword query request
+            let writed = tcp.write(&query[..received + 2]).await;
+            if let Err(e) = writed {
+                println!("{}", format!("意外的错误：{}", e).red());
+                return;
+            }
+
+            let mut resp = [0u8; 2048];
+            if let Ok(le) = tcp.read(&mut resp).await {
+                let mut map = map2.lock().await;
+                map.insert(Vec::from(&query[4..received + 2]), Vec::from(&resp[4..le]));
+                listener.send_to(&resp[2..le], client).await.unwrap();
+                if log {
+                    println!("{}", "                                      <<==  DNS响应  <<==".green().bold());
+                    print!("                                      ");
+                    std::panic::catch_unwind(|| {
+                        DNS::with(&resp[..le], 2).info();
+                    }).unwrap_or_default();
+                }
+            }
+        });
+    }
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     match std::env::args().nth(1).unwrap_or_default().as_str() {
         "server" => {
             server().await
+        }
+        "tcp" => {
+            client_tcp().await
         }
         _ => client().await
     }
