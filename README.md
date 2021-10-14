@@ -17,4 +17,9 @@ client:
 ./dnsd 127.0.0.1:53 your_server:1234 log_off
 ```
 
+客户端兼容不加密的 tcp 模式：
+```
+./dnsd tcp 127.0.0.1:53 1.1.1.1:53 log_off
+```
+
 ![./res/dsnds.png](https://raw.githubusercontent.com/develon2015/dnsd/rust/res/dnsd_win.png)
